@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch: {}
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install runtime dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Install dev tools (ruff, pytest, pytest-cov)
+        run: |
+          python -m pip install ruff pytest pytest-cov
+
+      - name: Lint with ruff
+        run: |
+          # Lint the source folder. This will fail the job if issues are found.
+          ruff check src
+
+      - name: Syntax check (compile)
+        run: |
+          # Ensure Python source files compile
+          python -m compileall src
+
+      - name: Run tests with coverage
+        id: run-tests
+        run: |
+          # Run pytest with coverage. If no tests are collected pytest exits with code 5; treat that as success.
+          pytest --cov=src --cov-report=xml --cov-report=term -q || (ec=$?; if [ $ec -eq 5 ]; then echo "No tests collected, continuing"; exit 0; else exit $ec; fi)
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+          if-no-files-found: warn
